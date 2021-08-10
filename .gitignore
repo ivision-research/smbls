@@ -1,0 +1,6 @@
+creds.json
+targets.txt
+out.json
+/*.egg-info/
+/build/
+__pycache__/
