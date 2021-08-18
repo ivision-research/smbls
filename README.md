@@ -18,7 +18,7 @@ git clone and `pip install .`
 
 A pypi release is planned.
 
-Alternatively, you can just drop [smbls/\_\_init\_\_.py](smbls/__init__.py) as `smbls.py` on a box with python3.7+ and Impacket installed and run that.
+Alternatively, you can just drop [smbls/\_\_init\_\_.py](smbls/__init__.py) as `smbls.py` on a box with python3.9+ and Impacket installed and run that.
 
 ## Usage
 
