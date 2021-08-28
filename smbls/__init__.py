@@ -2,11 +2,23 @@
 
 import argparse
 import json
+import re
 from enum import IntFlag
 from multiprocessing import Pool
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
 from impacket.dcerpc.v5 import srvs
 from impacket.smbconnection import SessionError, SMBConnection
+
+Creds = Dict[str, str]
+Scan = Dict[str, Any]
+
+password_regex = re.compile(r"(?P<domain>[^/:]*)/(?P<username>[^:]*):(?P<password>.*)")
+hash_regex = re.compile(
+    r"(?P<domain>[^/:]*)/(?P<username>[^#]*)#(?P<lmhash>[a-fA-F0-9]{32}):(?P<nthash>[a-fA-F0-9]{32})"
+)
+# TODO look up valid Windows usernames
 
 
 class STypes(IntFlag):
@@ -24,8 +36,17 @@ class STypes(IntFlag):
     TEMPORARY = srvs.STYPE_TEMPORARY
 
 
-def list_shares(argbundle):
-    creds, host = argbundle
+def list_shares_multicred(
+    argbundle: Tuple[List[Creds], str]
+) -> Tuple[str, Dict[str, Scan]]:
+    creds_list, host = argbundle
+    res = dict()
+    for creds in creds_list:
+        res[serialize(creds)] = list_shares(creds, host)
+    return host, res
+
+
+def list_shares(creds: Creds, host: str) -> Scan:
     try:
         smbconn = SMBConnection(host, host, timeout=5)
         smbconn.login(
@@ -37,11 +58,11 @@ def list_shares(argbundle):
         )
 
     except OSError as e:
-        return (host, {"errtype": "conn", "error": str(e.strerror)})
+        return {"errtype": "conn", "error": str(e.strerror)}
     except SessionError as e:
-        return (host, {"errtype": "auth", "error": str(e)})
+        return {"errtype": "auth", "error": str(e)}
     except Exception as e:
-        return (host, {"errtype": "unknown_init", "error": str(e)})
+        return {"errtype": "unknown_init", "error": str(e)}
     try:
         # Get info
         info = dict()
@@ -100,100 +121,139 @@ def list_shares(argbundle):
                     }
                 )
         except Exception as e:
-            return (host, {"errtype": "shares", "error": str(e)})
+            return {"errtype": "shares", "error": str(e)}
 
-        return (
-            host,
-            {
-                "errtype": "",
-                "error": "",
-                "info": info,
-                "shares": shares,
-                "admin": admin,
-            },
-        )
+        return {
+            "errtype": "",
+            "error": "",
+            "info": info,
+            "shares": shares,
+            "admin": admin,
+        }
     except Exception as e:
-        return (host, {"errtype": "unknown", "error": str(type(e)) + str(e)})
+        return {"errtype": "unknown", "error": str(type(e)) + str(e)}
     finally:
         smbconn.close()
 
 
-def main():
-    class CustomFormatter(
-        argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter
-    ):
-        pass
+def parse_credentials(s: str) -> Creds:
+    if match := hash_regex.match(s):
+        return match.groupdict("")
+    elif match := password_regex.match(s):
+        return match.groupdict("")
+    else:
+        raise ValueError("Couldn't parse credentials")
 
+
+def serialize(creds: Creds) -> str:
+    return creds.get("domain", "") + "_" + creds.get("username", "")
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(
-        formatter_class=CustomFormatter,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-# Create creds file:
-$ echo '{"domain": "exampledomain", "username": "exampleuser", "password": "examplepassword"}' > creds.json
-# Or
-$ echo '{"domain": "localhost", "username": "exampleuser", "lmhash": "aad3b435b51404eeaad3b435b51404ee", "nthash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' > creds.json
-
-# Create targets file:
+Create targets file:
 $ printf '10.0.0.1\n10.0.0.2\n...' > targets.txt
-# Or for CIDR notation, consider
+Or for CIDR notation, consider
 $ nmap -sL -n 10.0.0.0/24 | awk '/scan report for/{print $5}' > targets.txt
 
-# Run scan:
-$ smbls -c creds.json -t targets.txt -o out.json""",
+For a single-user scan:
+$ smbls -c exampledomain/exampleuser:examplepassword targets.txt -o out.json
+
+Or for a multi-user scan:
+1. create creds file:
+$ echo 'exampledomain/exampleuser:examplepassword' > creds.txt
+$ echo localhost/exampleuser#aad3b435b51404eeaad3b435b51404ee:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' >> creds.txt
+2. run scan:
+$ smbls -C creds.txt targets.txt -O example_dir
+""",
     )
-    parser.add_argument(
+    opts_creds = parser.add_mutually_exclusive_group(required=True)
+    opts_creds.add_argument(
         "-c",
         dest="creds",
-        default="creds.json",
-        help="JSON credential object. See below for examples",
+        help="Credentials to test. Format is either domain/user:password or domain/user#lmhash:nthash",
+    )
+    opts_creds.add_argument(
+        "-C",
+        dest="creds_file",
+        help="File containing credentials to test, one per line",
+    )
+    opts_output = parser.add_mutually_exclusive_group(required=True)
+    opts_output.add_argument(
+        "-o",
+        dest="out_file",
+        help="File to write output to. Can only be used with a single set of credentials (-c)",
+    )
+    opts_output.add_argument(
+        "-O",
+        dest="out_dir",
+        help="Directory to write output files to. Each set of credentials will be saved in its own file.",
     )
     parser.add_argument(
-        "-t",
         dest="targets",
-        default="targets.txt",
         help="one host per line",
     )
-    parser.add_argument("-o", dest="output", default="out.json", help="output file")
     parser.add_argument(
         "-j",
         dest="threads",
         type=int,
         default=32,
-        help="multiprocessing threads. This is heavily I/O-bound, so high numbers are fine",
+        help="multiprocessing threads. This is heavily I/O-bound, so high numbers are fine (default: 32)",
     )
     args = parser.parse_args()
+    if args.out_file and args.creds_file:
+        print("Use out dir (-O) instead of out file (-o) if using a creds file (-C)")
+        parser.exit(1)
 
-    with open(args.creds) as f:
-        creds = json.load(f)
-        print(
-            f"""Authenticating with
-username: {creds.get('username', '')}
-password: {creds.get('password', '')}
-domain: {creds.get('domain', '')}
-lmhash: {creds.get('lmhash', '')}
-nthash: {creds.get('nthash', '')}
-"""
-        )
+    if args.creds:
+        creds_input = [args.creds]
+    else:
+        with open(args.creds_file) as f:
+            creds_input = f.readlines()
+    creds_list = [parse_credentials(ci) for ci in creds_input]
+    if len(set([serialize(creds) for creds in creds_list])) != len(creds_list):
+        raise Exception("Duplicated users are not allowed")
+
     with open(args.targets) as f:
         targets = [line.strip() for line in f]
-    scan = dict()
+    scan_res: Dict[str, Dict[str, Scan]] = {
+        serialize(creds): dict() for creds in creds_list
+    }
+    loop_e = None
     with Pool(args.threads) as pool:
-        it = pool.imap_unordered(list_shares, [(creds, target) for target in targets])
+        it = pool.imap_unordered(
+            list_shares_multicred, [(creds_list, target) for target in targets]
+        )
         for i in range(len(targets)):
             try:
                 host, res = it.next(timeout=15)
-                scan[host] = res
-                print(
-                    f'{i}/{len(targets)} scanned {host}, {"error: " + res["errtype"] if res["errtype"] else ""} {"ADMIN" if res.get("admin") else ""}'
-                )
+                for serialized_creds, scan in res.items():
+                    scan_res[serialized_creds][host] = scan
+                    print(
+                        f'{i}/{len(targets)} scanned {host} with {serialized_creds}, {"error: " + scan["errtype"] if scan["errtype"] else ""} {"ADMIN" if scan.get("admin") else ""}'
+                    )
             except Exception as e:
                 # If you see this, file an issue
                 print(
                     f"Error in main loop: '{e}'\n"
                     "writing partial output and exiting..."
                 )
+                loop_e = e
                 break
-    with open(args.output, "w") as f:
-        json.dump(scan, f)
+    if args.out_file:
+        with open(args.out_file, "w") as f:
+            json.dump(scan_res[serialize(creds_list[0])], f)
+    else:
+        Path(args.out_dir).mkdir(exist_ok=True)
+        for creds in creds_list:
+            with Path(args.out_dir, serialize(creds)).with_suffix(".json").open(
+                "w"
+            ) as f:
+                json.dump(scan_res[serialize(creds)], f)
+    if loop_e:
+        raise loop_e
 
 
 if __name__ == "__main__":

@@ -1,6 +1,3 @@
-creds.json
-targets.txt
-out.json
 /*.egg-info/
 /build/
 /dist/
