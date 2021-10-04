@@ -84,6 +84,7 @@ def list_shares(creds: Creds, host: str) -> Scan:
             except Exception as e:
                 res = f"error: {e}"
             info[attr] = res
+        info["getDialect"] = hex(info["getDialect"])
 
         # Get shares
         admin = False
