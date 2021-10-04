@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Tuple
 from impacket.dcerpc.v5 import srvs
 from impacket.smbconnection import SessionError, SMBConnection
 
+
 Creds = Dict[str, str]
 Scan = Dict[str, Any]
 
@@ -18,7 +19,6 @@ password_regex = re.compile(r"(?P<domain>[^/:]*)/(?P<username>[^:]*):(?P<passwor
 hash_regex = re.compile(
     r"(?P<domain>[^/:]*)/(?P<username>[^#]*)#(?P<lmhash>[a-fA-F0-9]{32}):(?P<nthash>[a-fA-F0-9]{32})"
 )
-# TODO look up valid Windows usernames
 
 
 class STypes(IntFlag):
@@ -236,7 +236,7 @@ $ smbls -C creds.txt targets.txt -O example_dir
                         f'{i}/{len(targets)} scanned {host} with {serialized_creds}, {"error: " + scan["errtype"] if scan["errtype"] else ""} {"ADMIN" if scan.get("admin") else ""}'
                     )
             except Exception as e:
-                # If you see this, file an issue
+                # If you see this, please file an issue
                 print(
                     f"Error in main loop: '{e}'\n"
                     "writing partial output and exiting..."
