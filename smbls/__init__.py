@@ -154,7 +154,7 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Create targets file:
-$ printf '10.0.0.1\n10.0.0.2\n...' > targets.txt
+$ printf '10.0.0.1\\n10.0.0.2\\n...' > targets.txt
 Or for CIDR notation, consider
 $ nmap -sL -n 10.0.0.0/24 | awk '/scan report for/{print $5}' > targets.txt
 
@@ -193,7 +193,7 @@ $ smbls -C creds.txt targets.txt -O example_dir
     )
     parser.add_argument(
         dest="targets",
-        help="one host per line",
+        help="file containing targets, one host per line, or - for stdin",
     )
     parser.add_argument(
         "-j",
@@ -216,7 +216,7 @@ $ smbls -C creds.txt targets.txt -O example_dir
     if len(set([serialize(creds) for creds in creds_list])) != len(creds_list):
         raise Exception("Duplicated users are not allowed")
 
-    with open(args.targets) as f:
+    with open("/dev/stdin" if args.targets == "-" else args.targets) as f:
         targets = [line.strip() for line in f]
     scan_res: Dict[str, Dict[str, Scan]] = {
         serialize(creds): dict() for creds in creds_list
