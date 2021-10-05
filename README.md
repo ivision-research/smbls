@@ -2,7 +2,7 @@
 
 This is a simple Impacket-based tool to check a set of credentials against many Windows hosts and get permission for SMB shares.
 
-For the input, you give it a list of IPs/hostnames and a set of credentials, which are the domain, username, and either password or lm/ntlm hashes. The output is a JSON array of host information, including errors, SMB metadata, and information about each share, including whether the account has read access.
+For the input, you give it a list of IPs/hostnames and a set of credentials, which are the domain, username, and either password or LM/NTLM hashes. The output is a JSON array of host information, including errors, SMB metadata, and information about each share, including whether the account has read access.
 
 There are already many ways to do this. This tool was written to perform in large, heterogeneous networks where existing tools ended up being slow or unreliable in practice. It performs well in this environment because:
 
@@ -14,9 +14,7 @@ The main limitation is that it does not check whether a share is writeable or no
 
 ## Install
 
-git clone and `pip install .`
-
-A pypi release is planned.
+`pip install smbls`
 
 Alternatively, you can just drop [smbls/\_\_init\_\_.py](smbls/__init__.py) as `smbls.py` on a box with python3.9+ and Impacket installed and run that.
 
