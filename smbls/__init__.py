@@ -165,7 +165,7 @@ $ smbls -c exampledomain/exampleuser:examplepassword targets.txt -o out.json
 Or for a multi-user scan:
 1. create creds file:
 $ echo 'exampledomain/exampleuser:examplepassword' > creds.txt
-$ echo localhost/exampleuser#aad3b435b51404eeaad3b435b51404ee:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' >> creds.txt
+$ echo 'localhost/exampleuser#aad3b435b51404eeaad3b435b51404ee:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' >> creds.txt
 2. run scan:
 $ smbls -C creds.txt targets.txt -O example_dir
 """,

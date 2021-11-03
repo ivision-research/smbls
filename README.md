@@ -22,9 +22,7 @@ Alternatively, you can just drop [smbls/\_\_init\_\_.py](smbls/__init__.py) as `
 
 ```
 Create targets file:
-$ printf '10.0.0.1
-10.0.0.2
-...' > targets.txt
+$ printf '10.0.0.1\n10.0.0.2\n...' > targets.txt
 Or for CIDR notation, consider
 $ nmap -sL -n 10.0.0.0/24 | awk '/scan report for/{print $5}' > targets.txt
 
@@ -34,11 +32,9 @@ $ smbls -c exampledomain/exampleuser:examplepassword targets.txt -o out.json
 Or for a multi-user scan:
 1. create creds file:
 $ echo 'exampledomain/exampleuser:examplepassword' > creds.txt
-$ echo localhost/exampleuser#aad3b435b51404eeaad3b435b51404ee:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-' >> creds.txt
+$ echo 'localhost/exampleuser#aad3b435b51404eeaad3b435b51404ee:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' >> creds.txt
 2. run scan:
 $ smbls -C creds.txt targets.txt -O example_dir
-
 ```
 
 ### Output parsing
