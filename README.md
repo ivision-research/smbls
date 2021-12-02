@@ -14,7 +14,9 @@ The main limitation is that it does not check whether a share is writeable or no
 
 ## Install
 
-`pip install smbls`
+`pip install 'smbls>1.0.0'`
+
+Note that `pip install smbls` will install smbls 1.0.0 on older Python versions that are not actually supported, and this will raise runtime errors. Installing with the recommended command will raise expected errors on all Python versions.
 
 Alternatively, you can just drop [smbls/\_\_init\_\_.py](smbls/__init__.py) as `smbls.py` on a box with python3.9+ and Impacket installed and run that.
 
