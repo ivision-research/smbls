@@ -14,9 +14,7 @@ The main limitation is that it does not check whether a share is writeable or no
 
 ## Install
 
-`pip install 'smbls>1.0.0'`
-
-Note that `pip install smbls` will install smbls 1.0.0 on older Python versions that are not actually supported, and this will raise runtime errors. Installing with the recommended command will raise expected errors on all Python versions.
+`pip install smbls`
 
 Alternatively, you can just drop [smbls/\_\_init\_\_.py](smbls/__init__.py) as `smbls.py` on a box with python3.9+ and Impacket installed and run that.
 
@@ -65,7 +63,12 @@ jq -r 'path(..|select(.name?==$name))[0]' out.json --arg name D
 List hosts with corresponding readable shares:
 
 ```sh
-jq -r '.[] | select(.shares) | {ip: (.info.getRemoteHost), host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "") | {name: .name, type: .type, remark: .remark}]} | select(.readshares != [])' out.json
+jq -r '[.[] | select(.shares) | {ip: (.info.getRemoteHost), host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "") | {name: .name, type: .type, remark: .remark}]} | select(.readshares != [])]' out.json
+# With less output
+jq -r '.[] | select(.shares) | {host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "") | .name]} | select(.readshares != [])' out.json
+# Excluding print$ and IPC$ shares:
+jq -r '.[] | select(.shares) | {host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "" and ([.name] | inside($badsharenames) | not)) | .name]} | select(.readshares != [])' --argjson badsharenames '["print$", "IPC$"]' out.json
+
 ```
 
 List hosts that failed auth:
