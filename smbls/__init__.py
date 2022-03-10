@@ -210,9 +210,14 @@ $ smbls -C creds.txt targets.txt -O example_dir
 
     if args.creds:
         creds_input = [args.creds]
-    else:
+    elif args.creds_file:
         with open(args.creds_file) as f:
             creds_input = f.readlines()
+    else:
+        print(
+            "Creds must be specified either as an argument (-c) or a creds file (-C). To test for unauthenticated shares, use `-c /:`"
+        )
+        parser.exit(1)
     creds_list = [parse_credentials(ci) for ci in creds_input]
     if len(set([serialize(creds) for creds in creds_list])) != len(creds_list):
         raise Exception("Duplicated users are not allowed")
@@ -233,7 +238,7 @@ $ smbls -C creds.txt targets.txt -O example_dir
                 for serialized_creds, scan in res.items():
                     scan_res[serialized_creds][host] = scan
                     print(
-                        f'{i}/{len(targets)} scanned {host} with {serialized_creds}, {"error: " + scan["errtype"] if scan["errtype"] else ""} {"ADMIN" if scan.get("admin") else ""}'
+                        f'{i}/{len(targets)} scanned {host} with {serialized_creds},{" error: " + scan["errtype"] if scan["errtype"] else ""} {"ADMIN" if scan.get("admin") else ""}'
                     )
             except Exception as e:
                 # If you see this, please file an issue
@@ -249,9 +254,7 @@ $ smbls -C creds.txt targets.txt -O example_dir
     else:
         Path(args.out_dir).mkdir(exist_ok=True)
         for creds in creds_list:
-            with Path(args.out_dir, serialize(creds)).with_suffix(".json").open(
-                "w"
-            ) as f:
+            with Path(args.out_dir, serialize(creds) + ".json").open("w") as f:
                 json.dump(scan_res[serialize(creds)], f)
     if loop_e:
         raise loop_e
