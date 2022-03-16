@@ -386,7 +386,7 @@ $ smbls -C creds.txt targets.txt -O example_dir
                 # list_shares sends 3 requests, so allow each of them to almost
                 # time out plus a buffer second. This timeout should never
                 # trigger unless there's a bug somewhere.
-                host, res = it.next(timeout=REQUEST_TIMEOUT * 3 + 1)
+                host, res = it.next(timeout=REQUEST_TIMEOUT * 3 * len(creds_list) + 1)
                 for serialized_creds, scan in res.items():
                     scan_res[serialized_creds][host] = scan
                     print(
