@@ -10,7 +10,7 @@ There are already many ways to do this. This tool was written to perform in larg
 - It's very fast due to parallelization
 - The output is JSON
 
-The main limitation is that it does not check whether a share is writeable or not, because the known way to do that requires attempting to write to it.
+Note that smbls reports permissions at the share level. Individual folders and files on the share may have more restrictive permissions.
 
 ## Install
 
@@ -60,15 +60,31 @@ Find hosts with given share name:
 jq -r 'path(..|select(.name?==$name))[0]' out.json --arg name D
 ```
 
-List hosts with corresponding readable shares:
+Filter out host information and only show interpreted share information:
 
 ```sh
-jq -r '[.[] | select(.shares) | {ip: (.info.getRemoteHost), host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "") | {name: .name, type: .type, remark: .remark}]} | select(.readshares != [])]' out.json
-# With less output
-jq -r '.[] | select(.shares) | {host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "") | .name]} | select(.readshares != [])' out.json
-# Excluding print$ and IPC$ shares:
-jq -r '.[] | select(.shares) | {host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "" and ([.name] | inside($badsharenames) | not)) | .name]} | select(.readshares != [])' --argjson badsharenames '["print$", "IPC$"]' out.json
+jq -r '[.[] | select(.shares) | {ip: (.info.getRemoteHost), host: (.info.getServerDNSHostName), readshares: [.shares[] | {name: .name, access: .access, type: .type, remark: .remark}]} |
+select(.readshares != [])]' out.json
+```
 
+Show share information for shares with non-zero permission level:
+
+```sh
+jq -r '[.[] | select(.shares) | {ip: (.info.getRemoteHost), host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "") | {name: .name, access: .access, type: .type, remark: .remark}]} | select(.readshares != [])]' out.json
+# With less output
+jq -r '[.[] | select(.shares) | {host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "") | .name]} | select(.readshares != [])]' out.json
+# Excluding print$ and IPC$ shares:
+jq -r '[.[] | select(.shares) | {host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "" and ([.name] | inside($badsharenames) | not)) | .name]} | select(.readshares != [])]' --argjson badsharenames '["print$", "IPC$"]' out.json
+```
+
+Show share information for writeable shares (note that this is the share-level permission. Individual folders may have more limited permissions) :
+
+```sh
+jq -r '[.[] | select(.shares) | {ip: (.info.getRemoteHost), host: (.info.getServerDNSHostName), writeshares: [.shares[] | select(.access | contains("WRITE")) | {name: .name, access: .access, type: .type, remark: .remark}]} | select(.writeshares != [])]' out.json
+# With less output
+jq -r '[.[] | select(.shares) | {host: (.info.getServerDNSHostName), writeshares: [.shares[] | select(.access | contains("WRITE")) | .name]} | select(.writeshares != [])]' out.json
+# Excluding print$ and IPC$ shares:
+jq -r '[.[] | select(.shares) | {host: (.info.getServerDNSHostName), writeshares: [.shares[] | select((.access | contains("WRITE")) and ([.name] | inside($badsharenames) | not)) | .name]} | select(.writeshares != [])]' --argjson badsharenames '["print$", "IPC$"]' out.json
 ```
 
 List hosts that failed auth:
