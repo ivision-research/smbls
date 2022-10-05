@@ -10,7 +10,11 @@ from typing import Any, Dict, List, Tuple
 
 from impacket.dcerpc.v5 import srvs
 from impacket.smbconnection import SessionError, SMBConnection
+from impacket.nmb import NetBIOSTimeout
 
+
+# Max time in seconds for each impacket SMB request
+REQUEST_TIMEOUT = 5
 
 Creds = Dict[str, str]
 Scan = Dict[str, Any]
@@ -41,14 +45,24 @@ def list_shares_multicred(
 ) -> Tuple[str, Dict[str, Scan]]:
     creds_list, host = argbundle
     res = dict()
+    timed_out = False
     for creds in creds_list:
+        if timed_out:
+            res[serialize(creds)] = {
+                "errtype": "timeout",
+                "error": "timed out on same host with other credentials",
+            }
+            continue
         res[serialize(creds)] = list_shares(creds, host)
+        if res[serialize(creds)]["errtype"] == "timeout":
+            timed_out = True
+
     return host, res
 
 
 def list_shares(creds: Creds, host: str) -> Scan:
     try:
-        smbconn = SMBConnection(host, host, timeout=5)
+        smbconn = SMBConnection(host, host, timeout=REQUEST_TIMEOUT)
         smbconn.login(
             creds.get("username", ""),
             creds.get("password", ""),
@@ -61,6 +75,8 @@ def list_shares(creds: Creds, host: str) -> Scan:
         return {"errtype": "conn", "error": str(e.strerror)}
     except SessionError as e:
         return {"errtype": "auth", "error": str(e)}
+    except NetBIOSTimeout:
+        return {"errtype": "timeout", "error": "timed out logging in"}
     except Exception as e:
         return {"errtype": "unknown_init", "error": str(e)}
     try:
@@ -234,7 +250,10 @@ $ smbls -C creds.txt targets.txt -O example_dir
         )
         for i in range(len(targets)):
             try:
-                host, res = it.next(timeout=15)
+                # list_shares sends 3 requests, so allow each of them to almost
+                # time out plus a buffer second. This timeout should never
+                # trigger unless there's a bug somewhere.
+                host, res = it.next(timeout=REQUEST_TIMEOUT * 3 + 1)
                 for serialized_creds, scan in res.items():
                     scan_res[serialized_creds][host] = scan
                     print(
