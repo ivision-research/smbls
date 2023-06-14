@@ -63,12 +63,10 @@ jq -r 'path(..|select(.name?==$name))[0]' out.json --arg name D
 List hosts with corresponding readable shares:
 
 ```sh
+# JSON output
 jq -r '[.[] | select(.shares) | {ip: (.info.getRemoteHost), host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "") | {name: .name, type: .type, remark: .remark}]} | select(.readshares != [])]' out.json
-# With less output
-jq -r '.[] | select(.shares) | {host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "") | .name]} | select(.readshares != [])' out.json
-# Excluding print$ and IPC$ shares:
-jq -r '.[] | select(.shares) | {host: (.info.getServerDNSHostName), readshares: [.shares[] | select(.access != "" and ([.name] | inside($badsharenames) | not)) | .name]} | select(.readshares != [])' --argjson badsharenames '["print$", "IPC$"]' out.json
-
+# Formatted as a list of UNC paths, excluding a customizable list of shares
+jq -r '.[] | select(.shares) | .info.getServerDNSHostName as $host | .info.getRemoteHost as $ip | .shares[] | select(.access != "" and ([.name] | inside($exclude) | not)) | "\\\\" + (if $host == "" or $host == "\u0000" then $ip else $host end) + "\\" + .name' --argjson exclude '["print$", "IPC$"]' out.json
 ```
 
 List hosts that failed auth:
