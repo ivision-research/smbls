@@ -3,7 +3,6 @@
 import argparse
 import json
 import re
-from enum import IntFlag
 from multiprocessing import Pool
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -23,21 +22,6 @@ password_regex = re.compile(r"(?P<domain>[^/:]*)/(?P<username>[^:]*):(?P<passwor
 hash_regex = re.compile(
     r"(?P<domain>[^/:]*)/(?P<username>[^#]*)#(?P<lmhash>[a-fA-F0-9]{32}):(?P<nthash>[a-fA-F0-9]{32})"
 )
-
-
-class STypes(IntFlag):
-    """Share Types"""
-
-    DISKTREE = srvs.STYPE_DISKTREE
-    PRINTQ = srvs.STYPE_PRINTQ
-    DEVICE = srvs.STYPE_DEVICE
-    IPC = srvs.STYPE_IPC
-    CLUSTER_FS = srvs.STYPE_CLUSTER_FS
-    CLUSTER_SOFS = srvs.STYPE_CLUSTER_SOFS
-    CLUSTER_DFS = srvs.STYPE_CLUSTER_DFS
-
-    SPECIAL = srvs.STYPE_SPECIAL
-    TEMPORARY = srvs.STYPE_TEMPORARY
 
 
 def list_shares_multicred(
@@ -108,6 +92,26 @@ def list_shares(creds: Creds, host: str) -> Scan:
             shares = list()
             for share in smbconn.listShares():
                 share_name = share["shi1_netname"][:-1]
+                if share["shi1_type"] & srvs.STYPE_MASK == srvs.STYPE_DISKTREE:
+                    share_type = "DISKTREE"
+                elif share["shi1_type"] & srvs.STYPE_MASK == srvs.STYPE_PRINTQ:
+                    share_type = "PRINTQ"
+                elif share["shi1_type"] & srvs.STYPE_MASK == srvs.STYPE_DEVICE:
+                    share_type = "DEVICE"
+                elif share["shi1_type"] & srvs.STYPE_MASK == srvs.STYPE_IPC:
+                    share_type = "IPC"
+                else:
+                    share_type = "error_unknown"
+                if share["shi1_type"] & srvs.STYPE_CLUSTER_FS:
+                    share_type += "|CLUSTER_FS"
+                if share["shi1_type"] & srvs.STYPE_CLUSTER_SOFS:
+                    share_type += "|CLUSTER_SOFS"
+                if share["shi1_type"] & srvs.STYPE_CLUSTER_DFS:
+                    share_type += "|CLUSTER_DFS"
+                if share["shi1_type"] & srvs.STYPE_SPECIAL:
+                    share_type += "|SPECIAL"
+                if share["shi1_type"] & srvs.STYPE_TEMPORARY:
+                    share_type += "|TEMPORARY"
                 try:
                     smbconn.listPath(share_name, "*")
                     access = "READ"
@@ -120,18 +124,7 @@ def list_shares(creds: Creds, host: str) -> Scan:
                 shares.append(
                     {
                         "name": share_name,
-                        "type_raw": STypes(share["shi1_type"]),
-                        # STYPE has a flag of 0 that is valid when the masked
-                        # value is 0, which IntFlag doesn't look for. This
-                        # adds the 0 flag (DISKTREE) iff there's a masked
-                        # value.
-                        "type": str(STypes(share["shi1_type"])).removeprefix("STypes.")
-                        + (
-                            "|DISKTREE"
-                            if STypes(share["shi1_type"]) & srvs.STYPE_MASK == 0
-                            and STypes(share["shi1_type"]) != 0
-                            else ""
-                        ),
+                        "type": share_type,
                         "remark": share["shi1_remark"][:-1],
                         "access": access,
                         "access_error": access_error,
