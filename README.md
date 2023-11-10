@@ -1,7 +1,5 @@
 # smbls
 
-NOTE: this is a beta version. Please use tag v1.1.2 (the latest on PyPI) if you want stability.
-
 This is a simple Impacket-based tool to check credentials against many Windows hosts and get permission data for SMB shares.
 
 For the input, you give it a list of IPs/hostnames and sets of credentials, which are the domain, username, and either password or LM/NTLM hashes. The output is a JSON object of host information, including errors, SMB metadata, and information about each share, especially [permission data](#share-permissions). Then you can use the companion report generator to extract and format analyses from the data.
