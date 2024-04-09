@@ -95,6 +95,13 @@ def shares_print_type(share_data: ShareData) -> str:
     return str(share_data.get("type", "-"))
 
 
+def shares_print_writable(share_data: ShareData) -> str:
+    if "write_access" in share_data:
+        return str(share_data["write_access"])
+    else:
+        return "not tested"
+
+
 LOOKUPS: Dict[
     str,
     Dict[
@@ -148,6 +155,7 @@ LOOKUPS: Dict[
                 shares_print_errors,
                 "errors raised while gathering information",
             ),
+            "writable": (shares_print_writable, "whether share was writable or not"),
         },
     },
 }
