@@ -60,7 +60,13 @@ from impacket.smb3structs import (
     SMB2TreeConnect_Response,
 )
 
-from .version import __version__, __version_tuple__
+try:
+    from .version import __version__, __version_tuple__
+except ImportError:
+    print("Warning: not running from module. Using fake version information.")
+    __version__ = "fake"
+    __version_tuple__ = (-1, -1, -1)
+
 
 # Max time in seconds for each impacket SMB request
 REQUEST_TIMEOUT = 5

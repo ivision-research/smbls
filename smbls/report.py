@@ -6,7 +6,11 @@ import shlex
 from sys import stderr
 from typing import Any, Callable, Dict, Tuple, Union
 
-from .version import __version__, __version_tuple__
+try:
+    from .version import __version__
+except ImportError:
+    print("Warning: not running from module. Can't verify compatibility.")
+    __version__ = "fake"
 
 Scan = Dict[str, Any]
 ScanData = Dict[str, Any]
@@ -64,11 +68,11 @@ def hosts_print_shares(host_data: HostData) -> str:
 
 
 def shares_select_readable(share_data: ShareData) -> bool:
-    return share_data.get("read_access", False)
+    return bool(share_data.get("read_access", False))
 
 
 def shares_select_writable(share_data: ShareData) -> bool:
-    return share_data.get("write_access", False)
+    return bool(share_data.get("write_access", False))
 
 
 def shares_print_contents(share_data: ShareData) -> str:
@@ -76,11 +80,11 @@ def shares_print_contents(share_data: ShareData) -> str:
 
 
 def shares_print_dacl(share_data: ShareData) -> str:
-    return share_data.get("dacl", "-")
+    return str(share_data.get("dacl", "-"))
 
 
 def shares_print_remark(share_data: ShareData) -> str:
-    return share_data.get("remark", "-")
+    return str(share_data.get("remark", "-"))
 
 
 def shares_print_errors(share_data: ShareData) -> str:
@@ -88,7 +92,7 @@ def shares_print_errors(share_data: ShareData) -> str:
 
 
 def shares_print_type(share_data: ShareData) -> str:
-    return share_data.get("type", "-")
+    return str(share_data.get("type", "-"))
 
 
 LOOKUPS: Dict[
@@ -274,7 +278,7 @@ smblsreport -f out.json hosts -s admin -p signing,smbver
         stderr.write("error: scan data is from before smbls version 2\n")
         exit(1)
     else:
-        if res["version"] != __version__:
+        if res["version"] != __version__ or __version__ == "fake":
             # TODO maybe add more logic here
             stderr.write(
                 f"warning: installed version {__version__}, data version {res['version']}\n"
