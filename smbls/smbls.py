@@ -488,6 +488,7 @@ def si_dacl(
     if "PRINTQ" in share_type:
         return None
     try:
+        # https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smb2/e8fb45c1-a03d-44ca-b7ae-47385cfd7997
         fileId = smbconn.openFile(
             treeId=treeId,
             pathName="",
@@ -618,7 +619,7 @@ def share_info(
             # connected to host
             read_access = True
             write_access = True
-            share_perms = GENERIC_ALL
+            share_perms = normalize_access_mask(GENERIC_ALL, share_type)
         else:
             connect_success, treeId, share_perms = si_share_perms(
                 smbconn, share_name, share_type
@@ -629,16 +630,18 @@ def share_info(
         errors.append("share_perms: " + traceback.format_exc())
 
     # Test share DACL
-    try:
-        dacl = si_dacl(smbconn, treeId, share_type)  # Network call
-        if dacl is None:
+    # Skip attempting to gather DACL from IPC shares because it isn't implemented.
+    if share_name != "IPC$":
+        try:
+            dacl = si_dacl(smbconn, treeId, share_type)  # Network call
+            if dacl is None:
+                read_access = False
+        except smbconnection.SessionError as e:
             read_access = False
-    except smbconnection.SessionError as e:
-        read_access = False
-        errors.append(f"dacl: {e}")
-    except Exception:
-        errors.append("dacl: " + traceback.format_exc())
-        read_access = False
+            errors.append(f"dacl: {e}")
+        except Exception:
+            errors.append("dacl: " + traceback.format_exc())
+            read_access = False
 
     # Test listing share contents
     if "DISKTREE" in share_type or (opt_list_ipc and "IPC" in share_type):
