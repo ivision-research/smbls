@@ -327,9 +327,11 @@ def render_sid(sid: str) -> str:
         "S-1-5-64-14": "SChannel Authentication",  # A SID that's used when the SChannel authentication package authenticates the client.
         "S-1-5-64-21": "Digest Authentication",  # A SID that's used when the Digest authentication package authenticates the client.
         "S-1-5-80": "NT Service",  # A SID that's used as an NT Service account prefix.
+        "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464": "NT SERVICE\\TrustedInstaller",  # Not in MS docs
         "S-1-5-80-0": "All Services",  # A group that includes all service processes that are configured on the system. Membership is controlled by the operating system. SID S-1-5-80-0 equals NT SERVICES\ALL SERVICES. This SID was introduced in Windows Server 2008 R2.
         "S-1-5-83-0": "NT VIRTUAL MACHINE\\Virtual Machines",  # A built-in group. The group is created when the Hyper-V role is installed. Membership in the group is maintained by the Hyper-V Management Service (VMMS). This group requires the Create Symbolic Links right (SeCreateSymbolicLinkPrivilege) and the Log on as a Service right (SeServiceLogonRight).
         "S-1-15-2-1": "APPLICATION PACKAGE AUTHORITY\\ALL APPLICATION PACKAGES",  # Not in MS docs
+        "S-1-15-2-2": "APPLICATION PACKAGE AUTHORITY\\ALL RESTRICTED APPLICATION PACKAGES",  # Not in MS docs
     }
     res = well_known_sids.get(sid, sid)
 
@@ -360,6 +362,8 @@ def render_sid(sid: str) -> str:
         if last_subauthority in well_known_domain_sid_suffixes:
             domain_subauthorities = "-".join(sid.split("-")[3:-1])
             res = f"{well_known_domain_sid_suffixes[last_subauthority]} ({domain_subauthorities})"
+    if res == sid and sid.startswith("S-1-5-80"):
+        res += " (unknown service)"
     # S-1-15-3- are capability SIDs
     # "S-1-5-5-X-Y": "Logon Session",  # The X and Y values for these SIDs uniquely identify a particular sign-in session.
 
