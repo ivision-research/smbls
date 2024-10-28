@@ -795,8 +795,8 @@ $ printf '10.0.0.1\\n10.0.0.2\\n...' > targets.txt
 Or consider:
 $ nmap --open -Pn -p445 10.0.0.0/24 | awk '/scan report for/{print $5}' > targets.txt
 
-For a single-user scan:
-$ smbls -c exampledomain/exampleuser:examplepassword targets.txt -o out.json
+For a single-user scan listing share contents:
+$ smbls -l -c exampledomain/exampleuser:examplepassword targets.txt -o out.json
 
 Or for a multi-user scan:
 1. create creds file:
