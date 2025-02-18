@@ -378,7 +378,7 @@ def render_sid(sid: str) -> str:
 
 
 def list_shares_multicred(
-    argbundle: Tuple[List[Creds], ShareOptions, str]
+    argbundle: Tuple[Tuple[Creds, ...], ShareOptions, str],
 ) -> Tuple[str, Dict[str, Scan]]:
     creds_list, share_options, host = argbundle
     res = dict()
@@ -782,8 +782,8 @@ def parse_credentials(s: str) -> Creds:
         raise ValueError("Couldn't parse credentials")
 
 
-def serialize(creds: Creds) -> str:
-    return creds.get("domain", "") + "_" + creds.get("username", "")
+def serialize(creds: Creds, human: bool = False) -> str:
+    return creds.get("domain", "") + ("/" if human else "_") + creds.get("username", "")
 
 
 def smbls() -> None:
@@ -880,21 +880,29 @@ $ smbls -C creds.txt targets.txt -O example_dir
     elif args.creds_file:
         with open(args.creds_file) as f:
             creds_input = f.readlines()
-    creds_list = [parse_credentials(ci) for ci in creds_input]
-    if len(set([serialize(creds) for creds in creds_list])) != len(creds_list):
+    creds_table = {
+        serialize(parse_credentials(ci)): parse_credentials(ci) for ci in creds_input
+    }
+    if len(creds_table.keys()) != len(creds_input):
         raise Exception("Duplicated users are not allowed")
 
     targets = [line.strip() for line in args.targets]
+    max_targets, max_creds = len(targets), len(creds_table)
+    max_targets_width, max_creds_width = len(str(max_targets)), len(str(max_creds))
     args.targets.close()
     scan_res: Dict[str, Dict[str, Scan]] = {
-        serialize(creds): dict() for creds in creds_list
+        serialized_creds: dict() for serialized_creds in creds_table.keys()
     }
     start_time = datetime.now(timezone.utc).isoformat(timespec="seconds")
     loop_e = None
+
     with Pool(args.threads) as pool:
         it = pool.imap_unordered(
             list_shares_multicred,
-            [(creds_list, share_options, target) for target in targets],
+            [
+                (tuple(creds_table.values()), share_options, target)
+                for target in targets
+            ],
         )
         for i in range(len(targets)):
             try:
@@ -903,6 +911,7 @@ $ smbls -C creds.txt targets.txt -O example_dir
                 # would need to be very slow (but not too slow) and have many
                 # many shares
                 host, res = it.next(timeout=300)
+                cred_i = 0
                 for serialized_creds, scan in res.items():
                     scan_res[serialized_creds][host] = scan
                     admin = False
@@ -914,8 +923,9 @@ $ smbls -C creds.txt targets.txt -O example_dir
                             admin = True
                             break
                     print(
-                        f'{i}/{len(targets)} scanned {host} with {serialized_creds},{" error: " + scan["errtype"] if "errtype" in scan else ""} {"ADMIN" if admin else ""}'
+                        f'[host {i+1:{max_targets_width}}/{max_targets}, creds {cred_i+1:{max_creds_width}}/{max_creds}][{"err" if "errtype" in scan else "adm" if admin else "suc"}] scanned host {host} with user {serialize(creds_table[serialized_creds], human=True)}{", error: " + scan["errtype"] if "errtype" in scan else ""}{", ADMIN" if admin else ""}'
                     )
+                    cred_i += 1
             except Exception as e:
                 # If you see this, please file an issue
                 print("Error in main loop. Writing partial output and exiting.")
@@ -933,16 +943,19 @@ $ smbls -C creds.txt targets.txt -O example_dir
         with open(args.out_file, "w") as f:
             json.dump(
                 json_metadata
-                | {"creds": creds_list[0], "data": scan_res[serialize(creds_list[0])]},
+                | {
+                    "creds": next(iter(creds_table.values())),
+                    "data": scan_res[next(iter(creds_table.keys()))],
+                },
                 f,
             )
     else:
         Path(args.out_dir).mkdir(exist_ok=True)
-        for creds in creds_list:
-            with Path(args.out_dir, serialize(creds) + ".json").open("w") as f:
+        for serialized_creds, creds in creds_table.items():
+            with Path(args.out_dir, serialized_creds + ".json").open("w") as f:
                 json.dump(
                     json_metadata
-                    | {"creds": creds, "data": scan_res[serialize(creds)]},
+                    | {"creds": creds, "data": scan_res[serialized_creds]},
                     f,
                 )
     if loop_e:
