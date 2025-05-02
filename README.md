@@ -54,6 +54,29 @@ $ smblsreport -f out.json hosts -s admin -p signing,smbver
 
 See `smblsreport -h` for a full listing of select and print options. Please open an issue if there's another you'd like to see implemented.
 
+### Library usage
+
+```python
+import smbls
+
+
+for host, scan in smbls.run_scan(
+    targets=["10.0.0.1", "localhost"],
+    creds_table={
+        smbls.serialize(c): c
+        for c in (
+            {
+                "domain": "localhost",
+                "username": "Administrator",
+                "password": "Password1!",
+            },
+        )
+    },
+    share_options=(False, False, True, False),
+):
+    print(host, scan)
+```
+
 ## Share permissions
 
 In `smbls<2.0.0`, the only scanning method was to connect to each share and attempt to list the root path. In March 2022, an experimental branch was pushed that switched to parsing the `MaximalAccess` bitmask returned from the share connection instead. As of version 2, it returns results for both, also returns directory permissions for the root, and optionally attempts writing too.
@@ -104,8 +127,8 @@ To reiterate, please note these caveats:
 
 ## Versioning
 
-Versions have the format `major.minor.patch`:
+Versions have the format `major.minor.patch`. Only the JSON output is considered for compatibility. Console output, reporting output, and exposed functions can change at in minor versions.
 
 - Major version updates can remove, rename, or rearrange fields in the JSON output. No compatibility is expected.
 - Minor version updates can add new fields or add information to field values in the JSON output.
-- Patch version updates can change the wording of field values such as clarifying error messages or fixing bugs. `smblsreport` changes can happen here.
+- Patch version updates can change the wording of field values such as clarifying error messages or fixing bugs.

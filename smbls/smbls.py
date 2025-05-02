@@ -9,7 +9,7 @@ import traceback
 from datetime import datetime, timezone
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Generator
 
 from impacket import smb3, smb3structs, smbconnection
 from impacket.dcerpc.v5 import srvs
@@ -380,6 +380,8 @@ def render_sid(sid: str) -> str:
 def list_shares_multicred(
     argbundle: Tuple[Tuple[Creds, ...], ShareOptions, str],
 ) -> Tuple[str, Dict[str, Scan]]:
+
+
     creds_list, share_options, host = argbundle
     res = dict()
     timed_out = False
@@ -786,7 +788,48 @@ def serialize(creds: Creds, human: bool = False) -> str:
     return creds.get("domain", "") + ("/" if human else "_") + creds.get("username", "")
 
 
-def smbls() -> None:
+def run_scan(
+    targets: list[str],
+    creds_table: dict[str, Creds],
+    share_options: tuple[bool, bool, bool, bool],
+    threads: int = 32,
+) -> Generator[Tuple[str, Scan]]:
+    """Launches a scan in multiple processes.
+
+    Args:
+      targets:
+        A list of hostnames, CIDRs, or IPs.
+      creds_table:
+        A dict mapping a printable strings to Creds objects.
+      share_options:
+        A tuple of bools: auth_only, write, list, list_ipc.
+      threads:
+        The number of processes to spawn.
+
+    Returns:
+      A generator of tuples of hosts and Scan result objects.
+
+    Raises:
+      multiprocessing.TimeoutError: If a host's full job times out. Rarely
+        raised because most timeouts should be caught inside the pool.
+    """
+    with Pool(threads) as pool:
+        it = pool.imap_unordered(
+            list_shares_multicred,
+            [
+                (tuple(creds_table.values()), share_options, target)
+                for target in targets
+            ],
+        )
+        for _ in range(len(targets)):
+            # This is a per-host timeout. Each network call has an
+            # individual timeout of 5 seconds, so to reach this, the host
+            # would need to be very slow (but not too slow) and have many
+            # many shares
+            yield it.next(timeout=300)
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -896,41 +939,32 @@ $ smbls -C creds.txt targets.txt -O example_dir
     start_time = datetime.now(timezone.utc).isoformat(timespec="seconds")
     loop_e = None
 
-    with Pool(args.threads) as pool:
-        it = pool.imap_unordered(
-            list_shares_multicred,
-            [
-                (tuple(creds_table.values()), share_options, target)
-                for target in targets
-            ],
-        )
-        for i in range(len(targets)):
-            try:
-                # This is a per-host timeout. Each network call has an
-                # individual timeout of 5 seconds, so to reach this, the host
-                # would need to be very slow (but not too slow) and have many
-                # many shares
-                host, res = it.next(timeout=300)
-                cred_i = 0
-                for serialized_creds, scan in res.items():
-                    scan_res[serialized_creds][host] = scan
-                    admin = False
-                    for share in scan.get("shares", {}):
-                        # This is just a heuristic, but it's a pretty reliable one
-                        if (
-                            share.get("name") == "C$" or share.get("name") == "ADMIN$"
-                        ) and share.get("read_access"):
-                            admin = True
-                            break
-                    print(
-                        f'[host {i+1:{max_targets_width}}/{max_targets}, creds {cred_i+1:{max_creds_width}}/{max_creds}][{"err" if "errtype" in scan else "adm" if admin else "suc"}] scanned host {host} with user {serialize(creds_table[serialized_creds], human=True)}{", error: " + scan["errtype"] if "errtype" in scan else ""}{", ADMIN" if admin else ""}'
-                    )
-                    cred_i += 1
-            except Exception as e:
-                # If you see this, please file an issue
-                print("Error in main loop. Writing partial output and exiting.")
-                loop_e = e
-                break
+
+    scan_generator = run_scan(targets, creds_table, share_options, args.threads)
+    for i in range(len(targets)):
+        try:
+            host, res = next(scan_generator)
+            cred_i = 0
+            for serialized_creds, scan in res.items():
+                scan_res[serialized_creds][host] = scan
+                admin = False
+                for share in scan.get("shares", {}):
+                    # This is just a heuristic, but it's a pretty reliable one
+                    if (
+                        share.get("name") == "C$" or share.get("name") == "ADMIN$"
+                    ) and share.get("read_access"):
+                        admin = True
+                        break
+                print(
+                    f'[host {i+1:{max_targets_width}}/{max_targets}, creds {cred_i+1:{max_creds_width}}/{max_creds}][{"err" if "errtype" in scan else "adm" if admin else "suc"}] scanned host {host} with user {serialize(creds_table[serialized_creds], human=True)}{", error: " + scan["errtype"] if "errtype" in scan else ""}{", ADMIN" if admin else ""}'
+                )
+                cred_i += 1
+        except Exception as e:
+            # If you see this, please file an issue
+            print("Error in main loop. Writing partial output and exiting.")
+            loop_e = e
+            break
+
     end_time = datetime.now(timezone.utc).isoformat(timespec="seconds")
     json_metadata = {
         "version": __version__,
@@ -963,4 +997,4 @@ $ smbls -C creds.txt targets.txt -O example_dir
 
 
 if __name__ == "__main__":
-    smbls()
+    main()
