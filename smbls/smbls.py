@@ -776,9 +776,9 @@ def list_shares(creds: Creds, share_options: ShareOptions, host: str) -> Scan:
 
 
 def parse_credentials(s: str) -> Creds:
-    if match := hash_regex.match(s):
+    if match := hash_regex.fullmatch(s):
         return match.groupdict("")
-    elif match := password_regex.match(s):
+    elif match := password_regex.fullmatch(s):
         return match.groupdict("")
     else:
         raise ValueError("Couldn't parse credentials")
@@ -924,12 +924,17 @@ $ smbls -C creds.txt targets.txt -O example_dir
         with open(args.creds_file) as f:
             creds_input = f.readlines()
     creds_table = {
-        serialize(parse_credentials(ci)): parse_credentials(ci) for ci in creds_input
+        serialize(parse_credentials(ci.rstrip("\n"))): parse_credentials(
+            ci.rstrip("\n")
+        )
+        for ci in creds_input
     }
     if len(creds_table.keys()) != len(creds_input):
         raise Exception("Duplicated users are not allowed")
-
     targets = [line.strip() for line in args.targets]
+    if not targets or targets == [""]:
+        print("No targets specified.")
+        parser.exit(1)
     max_targets, max_creds = len(targets), len(creds_table)
     max_targets_width, max_creds_width = len(str(max_targets)), len(str(max_creds))
     args.targets.close()
