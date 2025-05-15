@@ -11,16 +11,19 @@ urls = {Repository = "https://github.com/CarveSystems/smbls"}
 license = {file = "LICENSE"}
 requires-python = ">=3.9"
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.9",
 ]
 dependencies = ["impacket"]
+
 [project.scripts]
-smbls = "smbls:smbls"
+smbls = "smbls.smbls:main"
 smblsreport = "smbls:report"
 
 [tool.hatch.version]

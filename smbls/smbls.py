@@ -380,8 +380,6 @@ def render_sid(sid: str) -> str:
 def list_shares_multicred(
     argbundle: Tuple[Tuple[Creds, ...], ShareOptions, str],
 ) -> Tuple[str, Dict[str, Scan]]:
-
-
     creds_list, share_options, host = argbundle
     res = dict()
     timed_out = False
@@ -531,7 +529,7 @@ def si_dacl(
             )
         )
 
-    res = smbconn.closeFile(treeId, fileId)  # Network call
+    smbconn.closeFile(treeId, fileId)  # Network call
     return dacl
 
 
@@ -790,8 +788,11 @@ def serialize(creds: Creds, human: bool = False) -> str:
 
 def run_scan(
     targets: list[str],
-    creds_table: dict[str, Creds],
-    share_options: tuple[bool, bool, bool, bool],
+    creds_list: list[Creds],
+    share_auth_only: bool = False,
+    share_write: bool = False,
+    share_list: bool = True,
+    share_list_ipc: bool = False,
     threads: int = 32,
 ) -> Generator[Tuple[str, Scan]]:
     """Launches a scan in multiple processes.
@@ -799,10 +800,19 @@ def run_scan(
     Args:
       targets:
         A list of hostnames, CIDRs, or IPs.
-      creds_table:
-        A dict mapping a printable strings to Creds objects.
-      share_options:
-        A tuple of bools: auth_only, write, list, list_ipc.
+      creds_list:
+        A list of Creds objects, which are dicts with string fields for
+        "domain", "username", and either "password" or "lmhash and "nthash".
+      share_auth_only:
+        Determines if information should not be retrieved about individual
+        shares.
+      share_write:
+        Determines if something should be written to shares to test write
+        permissions for a set of creds.
+      share_list:
+        Determines if the contents of directory shares should be returned.
+      share_list_ipc:
+        Determines if contents of IPC shares should be returned.
       threads:
         The number of processes to spawn.
 
@@ -813,13 +823,11 @@ def run_scan(
       multiprocessing.TimeoutError: If a host's full job times out. Rarely
         raised because most timeouts should be caught inside the pool.
     """
+    share_options = (share_auth_only, share_write, share_list, share_list_ipc)
     with Pool(threads) as pool:
         it = pool.imap_unordered(
             list_shares_multicred,
-            [
-                (tuple(creds_table.values()), share_options, target)
-                for target in targets
-            ],
+            [(tuple(creds_list), share_options, target) for target in targets],
         )
         for _ in range(len(targets)):
             # This is a per-host timeout. Each network call has an
@@ -916,7 +924,6 @@ $ smbls -C creds.txt targets.txt -O example_dir
     if args.out_file and args.creds_file:
         print("Use out dir (-O) instead of out file (-o) if using a creds file (-C)")
         parser.exit(1)
-    share_options = (args.auth_only, args.write, args.list, args.list_ipc)
 
     if args.creds:
         creds_input = [args.creds]
@@ -944,8 +951,15 @@ $ smbls -C creds.txt targets.txt -O example_dir
     start_time = datetime.now(timezone.utc).isoformat(timespec="seconds")
     loop_e = None
 
-
-    scan_generator = run_scan(targets, creds_table, share_options, args.threads)
+    scan_generator = run_scan(
+        targets,
+        list(creds_table.values()),
+        args.auth_only,
+        args.write,
+        args.list,
+        args.list_ipc,
+        args.threads,
+    )
     for i in range(len(targets)):
         try:
             host, res = next(scan_generator)

@@ -62,17 +62,17 @@ import smbls
 
 for host, scan in smbls.run_scan(
     targets=["10.0.0.1", "localhost"],
-    creds_table={
-        smbls.serialize(c): c
-        for c in (
-            {
-                "domain": "localhost",
-                "username": "Administrator",
-                "password": "Password1!",
-            },
-        )
-    },
-    share_options=(False, False, True, False),
+    creds_list=[
+        {
+            "domain": "localhost",
+            "username": "Administrator",
+            "password": "Password1!",
+        }
+    ],
+    share_auth_only=False,
+    share_write=False,
+    share_list=True,
+    share_list_ipc=False,
 ):
     print(host, scan)
 ```
@@ -127,8 +127,8 @@ To reiterate, please note these caveats:
 
 ## Versioning
 
-Versions have the format `major.minor.patch`. Only the JSON output is considered for compatibility. Console output, reporting output, and exposed functions can change at in minor versions.
+Versions have the format `major.minor.patch`. Compatibility is considered for the JSON output and the `smbls.run_scan` function interface. Console output, reporting output, and other functions can change at in minor versions.
 
-- Major version updates can remove, rename, or rearrange fields in the JSON output. No compatibility is expected.
-- Minor version updates can add new fields or add information to field values in the JSON output.
+- Major version updates can remove, rename, or rearrange fields in the JSON output. No compatibility is expected. As of version 3, the `smbls.run_scan` function interface can only be changed with a major version update.
+- Minor version updates can add new fields or add information to field values in the JSON output. All functions other than `run_scan` can change.
 - Patch version updates can change the wording of field values such as clarifying error messages or fixing bugs.
