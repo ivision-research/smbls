@@ -9,7 +9,7 @@ import traceback
 from datetime import datetime, timezone
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Generator
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from impacket import smb3, smb3structs, smbconnection
 from impacket.dcerpc.v5 import srvs
@@ -17,10 +17,10 @@ from impacket.ldap.ldaptypes import SR_SECURITY_DESCRIPTOR
 from impacket.nmb import NetBIOSTimeout
 from impacket.nt_errors import (
     STATUS_ACCESS_DENIED,
+    STATUS_LOGON_FAILURE,
     STATUS_NO_SUCH_FILE,
     STATUS_OBJECT_NAME_COLLISION,
     STATUS_SUCCESS,
-    STATUS_LOGON_FAILURE,
 )
 from impacket.smb3structs import (
     DACL_SECURITY_INFORMATION,
