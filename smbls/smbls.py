@@ -423,7 +423,7 @@ def connectTree(self: smbconnection.SMBConnection, share: str) -> Tuple[int, int
         remoteHost = sockaddr[0]
     except Exception:
         remoteHost = self._Connection["ServerIP"]
-    path = "\\\\" + remoteHost + "\\" + share
+    path = "\\\\" + str(remoteHost) + "\\" + share
     treeConnect = SMB2TreeConnect()
     treeConnect["Buffer"] = path.encode("utf-16le")
     treeConnect["PathLength"] = len(path) * 2
@@ -794,7 +794,7 @@ def run_scan(
     share_list: bool = True,
     share_list_ipc: bool = False,
     threads: int = 32,
-) -> Generator[Tuple[str, Scan]]:
+) -> Generator[Tuple[str, Scan], None, None]:
     """Launches a scan in multiple processes.
 
     Args:
