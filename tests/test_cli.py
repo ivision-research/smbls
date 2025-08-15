@@ -20,3 +20,7 @@ class TestRunningCli(unittest.TestCase):
             subprocess.run(["smblsreport", "-V"], capture_output=True).returncode,
             0,
         )
+
+
+if __name__ == "__main__":
+    unittest.main()

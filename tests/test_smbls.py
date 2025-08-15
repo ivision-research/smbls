@@ -1,11 +1,18 @@
 import json
 import unittest
 from io import StringIO
+from typing import Union
 from unittest.mock import MagicMock, call, mock_open, patch
 
 from impacket.ldap import ldaptypes
 from impacket.nmb import NetBIOSTimeout
-from impacket.nt_errors import STATUS_ACCESS_DENIED, STATUS_SUCCESS
+from impacket.nt_errors import (
+    STATUS_ACCESS_DENIED,
+    STATUS_LOGON_FAILURE,
+    STATUS_NO_SUCH_FILE,
+    STATUS_OBJECT_NAME_COLLISION,
+    STATUS_SUCCESS,
+)
 from impacket.smb import SharedFile
 from impacket.smb3structs import SMB2_DIALECT_311, SMB2TreeConnect_Response, SMB3Packet
 from impacket.smbconnection import SessionError
@@ -178,6 +185,28 @@ class TestNormalizingAccessMask(unittest.TestCase):
             0x00000020 | 0x00000080 | 0x00100000 | 0x00020000 | 0x20000000,
         )
 
+    def test_directory_granular_to_generic(self) -> None:
+        granular_all = (
+            0x00000001
+            | 0x00000002
+            | 0x00000004
+            | 0x00000008
+            | 0x00000010
+            | 0x00000020
+            | 0x00000040
+            | 0x00000080
+            | 0x00000100
+            | 0x00010000
+            | 0x00020000
+            | 0x00040000
+            | 0x00080000
+            | 0x00100000
+        )
+        self.assertEqual(
+            normalize_access_mask(granular_all, "DISKTREE"),
+            granular_all | 0x10000000 | 0x20000000 | 0x40000000 | 0x80000000,
+        )
+
     def test_filepipeprinter(self) -> None:
         self.assertEqual(normalize_access_mask(0x0, "IPC"), 0x0)
         self.assertEqual(
@@ -286,12 +315,22 @@ class TestRenderingAccessMask(unittest.TestCase):
             render_access_mask(0x80000002, "IPC"), "GENERIC_READ|FILE_WRITE_DATA"
         )
 
+    def test_generic_all_render(self) -> None:
+        self.assertEqual(render_access_mask(0x10000000, "DISKTREE"), "GENERIC_ALL")
+        self.assertEqual(render_access_mask(0x10000000, "IPC"), "GENERIC_ALL")
+
 
 class TestRenderingSID(unittest.TestCase):
     def test_sid(self) -> None:
         self.assertEqual(render_sid("S-1-0-0"), "Null SID")
         self.assertEqual(render_sid("S-1-5-32-544"), "Administrators")
         self.assertEqual(render_sid("S-1-5-21-1-2-3-500"), "Administrator (21-1-2-3)")
+
+    def test_unknown_sid_passthrough(self) -> None:
+        self.assertEqual(
+            render_sid("S-1-5-21-111-222-333-444"),
+            "S-1-5-21-111-222-333-444",
+        )
 
 
 class TestSerializingCreds(unittest.TestCase):
@@ -338,7 +377,7 @@ def make_smb3conn(
     denied: bool = False,
     sessionid: int = 0,
     fileid: int = 0,
-    dacl: ldaptypes.ACL | bytes = b"",
+    dacl: Union[ldaptypes.ACL, bytes] = b"",
 ) -> MagicMock:
     smbconn = MagicMock()
     smbconn._Session = {"TreeConnectTable": dict()}
@@ -463,6 +502,12 @@ class TestShareListings(unittest.TestCase):
             (True, ["filename"]),
         )
 
+    def test_not_found(self) -> None:
+        smbconn = make_smb3conn()
+        smbconn.listPath = MagicMock(side_effect=SessionError(STATUS_NO_SUCH_FILE))
+        self.assertEqual(si_list(smbconn, "notfound", False), (False, []))
+        self.assertEqual(si_list(smbconn, "notfound", True), (False, []))
+
 
 class TestShareWrite(unittest.TestCase):
     def test_noperms(self) -> None:
@@ -477,6 +522,17 @@ class TestShareWrite(unittest.TestCase):
         smbconn.createDirectory = MagicMock()
         smbconn.deleteDirectory = MagicMock()
         self.assertEqual(si_write(smbconn, "C$"), True)
+
+    def test_existing_dir(self) -> None:
+        smbconn = make_smb3conn()
+        smbconn.createDirectory = MagicMock(
+            side_effect=SessionError(STATUS_OBJECT_NAME_COLLISION)
+        )
+        smbconn.deleteDirectory = MagicMock()
+        # Should be true because it's evidence that the write previously
+        # succeeded and cleanup failed
+        self.assertTrue(si_write(smbconn, "C$"))
+        smbconn.deleteDirectory.assert_called_once()
 
 
 class TestShareInfo(unittest.TestCase):
@@ -627,6 +683,50 @@ class TestShareInfo(unittest.TestCase):
             },
         )
 
+    def test_ipc_dollar(self) -> None:
+        smbconn = MagicMock()
+        smbconn._SMBConnection = make_smb3conn(
+            max_access=0x10000000,
+            dacl=b"",
+        )
+        smbconn.listPath = MagicMock(return_value=[])
+        share_name = "IPC$"
+        share_remark = "IPC Share"
+        res = share_info(
+            smbconn,
+            {
+                "shi1_netname": share_name + "\0",
+                "shi1_type": 0x80000003,  # IPC|SPECIAL
+                "shi1_remark": share_remark + "\0",
+            },
+            (False, True, True, True),
+        )
+        self.assertEqual(res["name"], share_name)
+        self.assertIn("IPC", res["type"])
+        self.assertEqual(res["remark"], share_remark)
+        self.assertEqual(res["max_share_perms"], "GENERIC_ALL")
+        self.assertTrue(res["read_access"])  # assumed True
+        self.assertTrue(res["write_access"])  # assumed True
+
+    def test_contents_timeout(self) -> None:
+        smbconn = MagicMock()
+        smbconn._SMBConnection = make_smb3conn(
+            max_access=0x80000000,
+            dacl=make_acl(access_mask=0x80000000, sid="S-1-5-32-544"),
+        )
+        smbconn.listPath = MagicMock(side_effect=NetBIOSTimeout)
+        res = share_info(
+            smbconn,
+            {
+                "shi1_netname": "C$\0",
+                "shi1_type": 0x00000000,
+                "shi1_remark": "remark\0",
+            },
+            (False, False, True, False),
+        )
+        self.assertIn("errors", res)
+        self.assertTrue(any(e.startswith("contents: timeout") for e in res["errors"]))
+
 
 class TestListingShares(unittest.TestCase):
     @patch("impacket.smbconnection.SMBConnection")
@@ -636,11 +736,21 @@ class TestListingShares(unittest.TestCase):
             list_shares({}, (False, False, False, False), ""),
             {"errtype": "conn", "error": "None"},
         )
+        SMBConnection_mock.side_effect = SessionError(STATUS_LOGON_FAILURE)
+        self.assertEqual(
+            list_shares({}, (False, False, False, False), ""),
+            {"errtype": "auth", "error": "STATUS_LOGON_FAILURE"},
+        )
         SMBConnection_mock.side_effect = SessionError(STATUS_ACCESS_DENIED)
         self.assertEqual(
             list_shares({}, (False, False, False, False), ""),
             {"errtype": "auth", "error": "STATUS_ACCESS_DENIED"},
         )
+        SMBConnection_mock.side_effect = SessionError(1)
+        err_msg = list_shares({}, (False, False, False, False), "")
+        self.assertIn("errtype", err_msg)
+        self.assertEqual(err_msg["errtype"], "session")
+        self.assertIn("error", err_msg)
         SMBConnection_mock.side_effect = NetBIOSTimeout
         self.assertEqual(
             list_shares({}, (False, False, False, False), ""),
@@ -650,6 +760,16 @@ class TestListingShares(unittest.TestCase):
         self.assertEqual(
             list_shares({}, (False, False, False, False), ""),
             {"errtype": "unknown_init", "error": "fail"},
+        )
+
+        class BadExc(Exception):
+            def __str__(self) -> str:
+                raise Exception()
+
+        SMBConnection_mock.side_effect = BadExc()
+        self.assertEqual(
+            list_shares({}, (False, False, False, False), ""),
+            {"errtype": "unknown_init", "error": "failed to render error"},
         )
 
     @patch("impacket.smbconnection.SMBConnection")
@@ -690,6 +810,7 @@ class TestListingShares(unittest.TestCase):
                 "shares": [],
             },
         )
+        SMBConnection_mock.return_value.close.assert_called_once()
 
     @patch("impacket.smbconnection.SMBConnection")
     def test_err_shares(self, SMBConnection_mock: MagicMock) -> None:
@@ -973,7 +1094,9 @@ class TestCli(unittest.TestCase):
         self.assertIn("version", json_data)
         self.assertEqual(json_data["version"], smbls.version.__version__)
         self.assertIn("version_tuple", json_data)
-        self.assertEqual(tuple(json_data["version_tuple"]), smbls.version.__version_tuple__)
+        self.assertEqual(
+            tuple(json_data["version_tuple"]), smbls.version.__version_tuple__
+        )
         self.assertIn("start_time", json_data)
         self.assertIn("end_time", json_data)
         self.assertIn("args", json_data)
@@ -1097,7 +1220,9 @@ class TestCli(unittest.TestCase):
             self.assertIn("version", json_data)
             self.assertEqual(json_data["version"], smbls.version.__version__)
             self.assertIn("version_tuple", json_data)
-            self.assertEqual(tuple(json_data["version_tuple"]), smbls.version.__version_tuple__)
+            self.assertEqual(
+                tuple(json_data["version_tuple"]), smbls.version.__version_tuple__
+            )
             self.assertIn("start_time", json_data)
             self.assertIn("end_time", json_data)
             self.assertIn("args", json_data)
@@ -1112,6 +1237,36 @@ class TestCli(unittest.TestCase):
                     targets[2]: self.fake_scan_error,
                 },
             )
+
+    def test_outfile_with_credsfile(self) -> None:
+        filetype_mock = MagicMock(return_value=mock_open(read_data="host\n"))
+        stdout = StringIO()
+        with (
+            patch("argparse.FileType", filetype_mock),
+            patch(
+                "sys.argv",
+                ["smbls", "-C", "creds.txt", "-o", "notwritten.json", "targets.txt"],
+            ),
+            patch("sys.stdout", stdout),
+        ):
+            with self.assertRaises(SystemExit):
+                main()
+        self.assertIn("Use out dir", stdout.getvalue())
+
+    def test_empty_targets(self) -> None:
+        filetype_mock = MagicMock(return_value=mock_open(read_data="\n"))
+        stdout = StringIO()
+        with (
+            patch("argparse.FileType", filetype_mock),
+            patch(
+                "sys.argv",
+                ["smbls", "-c", "/:", "-o", "notwritten.json", "targets.txt"],
+            ),
+            patch("sys.stdout", stdout),
+        ):
+            with self.assertRaises(SystemExit):
+                main()
+        self.assertIn("No targets specified.", stdout.getvalue())
 
 
 if __name__ == "__main__":
